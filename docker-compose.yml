@@ -1,0 +1,47 @@
+name: payment-processor
+
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    image: payment-processor:latest
+    container_name: payments-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [payments-network]
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: payments-postgres
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-payments}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-payments}
+      POSTGRES_DB: ${POSTGRES_DB:-payments}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-payments} -d ${POSTGRES_DB:-payments}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [payments-network]
+
+volumes:
+  postgres_data:
+
+networks:
+  payments-network:
+    driver: bridge
