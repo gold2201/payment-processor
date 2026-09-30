@@ -1,0 +1,15 @@
+.venv/
+venv/
+.uv/
+
+.idea/
+
+__pycache__/
+*.pyc
+.ruff_cache/
+.pyright_cache/
+.pytest_cache/
+.pre-commit-cache/
+
+.env
+.env.local
