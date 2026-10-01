@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     PAYMENTS_DLX: str = "payments.dlx"
     PAYMENTS_RETRY_QUEUE: str = "payments.new.retry"
     PAYMENTS_DLQ: str = "payments.new.dlq"
-    PAYMENTS_RETRY_DELAY_MS: int = 10_000
-    MAX_CONSUMER_RETRIES: int = 3
+    PAYMENTS_RETRY_BASE_DELAY_MS: int = 5_000
+    MAX_CONSUMER_ATTEMPTS: int = 3
 
     OUTBOX_BASE_RETRY_DELAY_SECONDS: int = 3
     OUTBOX_MAX_ATTEMPTS: int = 3

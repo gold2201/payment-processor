@@ -15,7 +15,12 @@ class PaymentRepository(BaseRepository):
         return await self._session.get(Payment, payment_id)
 
     async def get_by_id_for_update(self, payment_id: UUID) -> Payment | None:
-        stmt = select(Payment).where(Payment.payment_id == payment_id).with_for_update()
+        stmt = (
+            select(Payment)
+            .where(Payment.payment_id == payment_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
