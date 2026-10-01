@@ -1,10 +1,11 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
 
-from app.common.enums import Currency
+from app.common.enums import Currency, PaymentStatus
 from app.models.payment import Payment
 from app.repositories.base import BaseRepository
 
@@ -12,6 +13,11 @@ from app.repositories.base import BaseRepository
 class PaymentRepository(BaseRepository):
     async def get(self, payment_id: UUID) -> Payment | None:
         return await self._session.get(Payment, payment_id)
+
+    async def get_by_id_for_update(self, payment_id: UUID) -> Payment | None:
+        stmt = select(Payment).where(Payment.payment_id == payment_id).with_for_update()
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def get_by_idempotency_key(self, key: str) -> Payment | None:
         result = await self._session.execute(select(Payment).where(Payment.idempotency_key == key))
@@ -36,5 +42,15 @@ class PaymentRepository(BaseRepository):
             webhook_url=webhook_url,
         )
         self._session.add(payment)
+        await self._session.flush()
+        return payment
+
+    async def update_status(
+        self,
+        payment: Payment,
+        status: PaymentStatus,
+    ) -> Payment:
+        payment.status = status
+        payment.processed_at = datetime.now(UTC)
         await self._session.flush()
         return payment

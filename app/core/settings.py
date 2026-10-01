@@ -23,11 +23,41 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = ""
     POSTGRES_DB: str = "payments"
 
+    RABBITMQ_HOST: str = "localhost"
+    RABBITMQ_PORT: int = 5672
+    RABBITMQ_USER: str = "guest"
+    RABBITMQ_PASSWORD: str = ""
+    RABBITMQ_VHOST: str = "/"
+
+    PAYMENTS_NEW_QUEUE: str = "payments.new"
+    PAYMENTS_EXCHANGE: str = "payments"
+    PAYMENTS_DLX: str = "payments.dlx"
+    PAYMENTS_RETRY_QUEUE: str = "payments.new.retry"
+    PAYMENTS_DLQ: str = "payments.new.dlq"
+    PAYMENTS_RETRY_DELAY_MS: int = 10_000
+    MAX_CONSUMER_RETRIES: int = 3
+
+    OUTBOX_BASE_RETRY_DELAY_SECONDS: int = 3
+    OUTBOX_MAX_ATTEMPTS: int = 3
+
+    WEBHOOK_TIMEOUT_SECONDS: int = 10
+    WEBHOOK_MAX_ATTEMPTS: int = 3
+    WEBHOOK_BASE_DELAY_SECONDS: int = 2
+
     @property
     def database_url(self) -> str:
         return (
             f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+
+    @property
+    def rabbit_url(self) -> str:
+        vhost = self.RABBITMQ_VHOST
+        if vhost != "/" and not vhost.startswith("/"):
+            vhost = f"/{vhost}"
+        return (
+            f"amqp://{self.RABBITMQ_USER}:{self.RABBITMQ_PASSWORD}" f"@{self.RABBITMQ_HOST}:{self.RABBITMQ_PORT}{vhost}"
         )
 
 
