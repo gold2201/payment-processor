@@ -1,21 +1,12 @@
 from typing import Any
 
+RETRY_COUNT_HEADER = "x-retry-count"
 
-def parse_retry_count(message: Any, queue_name: str) -> int:
+
+def get_retry_count(message: Any) -> int:
     headers = getattr(message, "headers", None) or {}
-    x_death = headers.get("x-death")
-    if not isinstance(x_death, list):
+    raw = headers.get(RETRY_COUNT_HEADER, 0)
+    try:
+        return max(int(raw), 0)
+    except (TypeError, ValueError):
         return 0
-
-    max_count = 0
-    for entry in x_death:
-        if not isinstance(entry, dict):
-            continue
-        if entry.get("queue") != queue_name or entry.get("reason") != "rejected":
-            continue
-        count = entry.get("count", 0)
-        if isinstance(count, int):
-            max_count = max(max_count, count)
-        elif isinstance(count, str) and count.isdigit():
-            max_count = max(max_count, int(count))
-    return max_count

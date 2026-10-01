@@ -92,10 +92,7 @@ class PaymentResponseSchema(BaseSchema):
     ]
     currency: Currency
     description: Annotated[str | None, Field(default=None, max_length=255)]
-    metadata: Annotated[
-        dict[str, Any],
-        Field(default_factory=dict, validation_alias="metadata_"),
-    ]
+    metadata: dict[str, Any] = Field(default_factory=dict)
     status: PaymentStatus
     webhook_url: HttpUrl | None = None
     created_at: datetime

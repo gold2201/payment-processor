@@ -1,64 +1,54 @@
 name: payment-processor
 
+x-app: &app
+  build:
+    context: .
+    target: runtime
+  image: payment-processor:latest
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    POSTGRES_HOST: postgres
+    RABBITMQ_HOST: rabbitmq
+  networks: [payments-network]
+
+x-app-depends-on: &app-depends-on
+  postgres:
+    condition: service_healthy
+  rabbitmq:
+    condition: service_healthy
+  migrate:
+    condition: service_completed_successfully
+
 services:
+  migrate:
+    <<: *app
+    container_name: payments-migrate
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
-    build:
-      context: .
-      target: runtime
-    image: payment-processor:latest
+    <<: *app
     container_name: payments-api
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      POSTGRES_HOST: postgres
-      RABBITMQ_HOST: rabbitmq
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    networks: [payments-network]
+    depends_on: *app-depends-on
 
   outbox-dispatcher:
-    build:
-      context: .
-      target: runtime
-    image: payment-processor:latest
+    <<: *app
     container_name: payments-outbox-dispatcher
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      POSTGRES_HOST: postgres
-      RABBITMQ_HOST: rabbitmq
     command: ["python", "-m", "app.workers.outbox_dispatcher"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    networks: [payments-network]
+    depends_on: *app-depends-on
 
   consumer:
-    build:
-      context: .
-      target: runtime
-    image: payment-processor:latest
+    <<: *app
     container_name: payments-consumer
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      POSTGRES_HOST: postgres
-      RABBITMQ_HOST: rabbitmq
     command: ["python", "-m", "app.workers.consumer"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-    networks: [payments-network]
+    depends_on: *app-depends-on
 
   postgres:
     image: postgres:16-alpine

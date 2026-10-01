@@ -12,9 +12,9 @@ from app.broker import (
     payments_exchange,
     payments_new_queue,
 )
-from app.broker.producer import publish_payment_to_dlq
+from app.broker.producer import publish_payment_retry, publish_payment_to_dlq
 from app.common.enums import DeliveryStatus, ProcessingState
-from app.common.headers import parse_retry_count
+from app.common.headers import get_retry_count
 from app.core.logging import setup_logging
 from app.core.settings import settings
 from app.db.session import async_session_factory
@@ -31,49 +31,12 @@ app = FastStream(broker)
 
 @broker.subscriber(payments_new_queue, payments_exchange)
 async def handle_payment_created(message: dict[str, Any], msg: RabbitMessage) -> None:
-    payment_id_raw = message.get("payment_id")
-    if not payment_id_raw:
-        logger.warning("Skip message without payment_id: %s", message)
-        try:
-            await publish_payment_to_dlq({"reason": "missing_payment_id", "payload": message})
-            await msg.ack()
-        except Exception:
-            await msg.nack(requeue=False)
-        return
+    attempt = get_retry_count(msg) + 1
 
-    try:
-        payment_id = UUID(payment_id_raw)
-    except ValueError:
-        logger.warning("Skip message with invalid payment_id: %s", message)
-        try:
-            await publish_payment_to_dlq(
-                {"reason": "invalid_payment_id", "payload": message},
-                message_id=str(payment_id_raw),
-            )
-            await msg.ack()
-        except Exception:
-            await msg.nack(requeue=False)
-        return
-
-    retries = parse_retry_count(msg, settings.PAYMENTS_NEW_QUEUE)
-    if retries >= settings.MAX_CONSUMER_RETRIES:
-        logger.error(
-            "Consumer retries exhausted for payment_id=%s (retries=%s)",
-            payment_id,
-            retries,
-        )
-        try:
-            await publish_payment_to_dlq(
-                {
-                    "reason": "consumer_retries_exhausted",
-                    "payment_id": str(payment_id),
-                    "payload": message,
-                },
-                message_id=str(payment_id),
-            )
-            await msg.ack()
-        except Exception:
-            await msg.nack(requeue=False)
+    payment_id = _parse_payment_id(message)
+    if payment_id is None:
+        logger.warning("Invalid or missing payment_id: %s", message)
+        await _dead_letter(msg, {"reason": "invalid_payment_id", "payload": message})
         return
 
     try:
@@ -94,14 +57,68 @@ async def handle_payment_created(message: dict[str, Any], msg: RabbitMessage) ->
         )
 
         if delivery_status == DeliveryStatus.DLQ_PUBLISH_FAILED:
-            logger.error("Webhook DLQ publish failed, requeue: id=%s", result.payment_id)
-            await msg.nack(requeue=False)
-            return
+            raise RuntimeError("webhook failed and DLQ publish failed")
 
         await msg.ack()
 
     except Exception:
-        logger.exception("Processing error for payment_id=%s", payment_id)
+        logger.exception("Processing error for payment_id=%s (attempt %s)", payment_id, attempt)
+        await _retry_or_dead_letter(msg, message, payment_id=payment_id, attempt=attempt)
+
+
+def _parse_payment_id(message: dict[str, Any]) -> UUID | None:
+    raw = message.get("payment_id") if isinstance(message, dict) else None
+    if not raw:
+        return None
+    try:
+        return UUID(str(raw))
+    except ValueError:
+        return None
+
+
+async def _retry_or_dead_letter(
+    msg: RabbitMessage,
+    message: dict[str, Any],
+    *,
+    payment_id: UUID,
+    attempt: int,
+) -> None:
+    if attempt >= settings.MAX_CONSUMER_ATTEMPTS:
+        logger.error("Attempts exhausted for payment_id=%s (attempts=%s)", payment_id, attempt)
+        await _dead_letter(
+            msg,
+            {
+                "reason": "consumer_retries_exhausted",
+                "payment_id": str(payment_id),
+                "payload": message,
+            },
+            message_id=str(payment_id),
+        )
+        return
+
+    try:
+        await publish_payment_retry(
+            message,
+            failed_attempts=attempt,
+            message_id=str(payment_id),
+        )
+        await msg.ack()
+    except Exception:
+        logger.exception("Retry publish failed for payment_id=%s", payment_id)
+        await msg.nack(requeue=False)
+
+
+async def _dead_letter(
+    msg: RabbitMessage,
+    dlq_message: dict[str, Any],
+    *,
+    message_id: str | None = None,
+) -> None:
+    try:
+        await publish_payment_to_dlq(dlq_message, message_id=message_id)
+        await msg.ack()
+    except Exception:
+        logger.exception("DLQ publish failed")
         await msg.nack(requeue=False)
 
 
