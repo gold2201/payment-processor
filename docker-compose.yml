@@ -1,0 +1,101 @@
+name: payment-processor
+
+x-app: &app
+  build:
+    context: .
+    target: runtime
+  image: payment-processor:latest
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    POSTGRES_HOST: postgres
+    RABBITMQ_HOST: rabbitmq
+  networks: [payments-network]
+
+x-app-depends-on: &app-depends-on
+  postgres:
+    condition: service_healthy
+  rabbitmq:
+    condition: service_healthy
+  migrate:
+    condition: service_completed_successfully
+
+services:
+  migrate:
+    <<: *app
+    container_name: payments-migrate
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    container_name: payments-api
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    depends_on: *app-depends-on
+
+  outbox-dispatcher:
+    <<: *app
+    container_name: payments-outbox-dispatcher
+    command: ["python", "-m", "app.workers.outbox_dispatcher"]
+    depends_on: *app-depends-on
+
+  consumer:
+    <<: *app
+    container_name: payments-consumer
+    command: ["python", "-m", "app.workers.consumer"]
+    depends_on: *app-depends-on
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: payments-postgres
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-payments}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-payments}
+      POSTGRES_DB: ${POSTGRES_DB:-payments}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-payments} -d ${POSTGRES_DB:-payments}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [payments-network]
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: payments-rabbitmq
+    restart: unless-stopped
+    hostname: rabbitmq
+    env_file: .env
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [payments-network]
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+
+networks:
+  payments-network:
+    driver: bridge
