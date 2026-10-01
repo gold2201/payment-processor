@@ -31,3 +31,4 @@ repos:
           - alembic
           - faststream
           - httpx
+          - aio_pika

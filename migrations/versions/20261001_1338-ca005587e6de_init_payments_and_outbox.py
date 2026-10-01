@@ -1,8 +1,8 @@
 """init payments and outbox
 
-Revision ID: d9a0c2b9a29d
+Revision ID: ca005587e6de
 Revises:
-Create Date: 2026-10-01 08:14:56.912100+00:00
+Create Date: 2026-10-01 13:38:50.404874+00:00
 
 """
 
@@ -13,7 +13,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "d9a0c2b9a29d"
+revision: str = "ca005587e6de"
 down_revision: str | Sequence[str] | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

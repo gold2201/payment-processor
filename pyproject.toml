@@ -21,6 +21,7 @@ alembic = "^1.14.0"
 faststream = { extras = ["rabbit"], version = "^0.5.34" }
 
 httpx = "^0.27.2"
+aio-pika = ">=9.5,<10"
 
 [tool.poetry.group.dev.dependencies]
 faker = "^33.1.0"

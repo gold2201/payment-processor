@@ -11,11 +11,52 @@ services:
     env_file: .env
     environment:
       POSTGRES_HOST: postgres
+      RABBITMQ_HOST: rabbitmq
     ports:
       - "8000:8000"
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     depends_on:
       postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks: [payments-network]
+
+  outbox-dispatcher:
+    build:
+      context: .
+      target: runtime
+    image: payment-processor:latest
+    container_name: payments-outbox-dispatcher
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      RABBITMQ_HOST: rabbitmq
+    command: ["python", "-m", "app.workers.outbox_dispatcher"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks: [payments-network]
+
+  consumer:
+    build:
+      context: .
+      target: runtime
+    image: payment-processor:latest
+    container_name: payments-consumer
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      RABBITMQ_HOST: rabbitmq
+    command: ["python", "-m", "app.workers.consumer"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     networks: [payments-network]
 
@@ -39,8 +80,31 @@ services:
       retries: 10
     networks: [payments-network]
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: payments-rabbitmq
+    restart: unless-stopped
+    hostname: rabbitmq
+    env_file: .env
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/}
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [payments-network]
+
 volumes:
   postgres_data:
+  rabbitmq_data:
 
 networks:
   payments-network:
