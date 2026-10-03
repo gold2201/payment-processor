@@ -8,7 +8,7 @@ from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.common.enums import Currency, PaymentStatus
+from app.common.enums import Currency, PaymentStatus, enum_values
 from app.models.base import Base
 
 
@@ -26,7 +26,7 @@ class Payment(Base):
             Currency,
             name="payment_currency",
             native_enum=True,
-            values_callable=lambda x: [e.value for e in x],
+            values_callable=enum_values,
         ),
         nullable=False,
     )
@@ -43,11 +43,11 @@ class Payment(Base):
             PaymentStatus,
             name="payment_status",
             native_enum=True,
-            values_callable=lambda x: [e.value for e in x],
+            values_callable=enum_values,
         ),
         nullable=False,
         default=PaymentStatus.PENDING,
-        server_default=PaymentStatus.PENDING,
+        server_default="pending",
     )
     idempotency_key: Mapped[str] = mapped_column(
         String(255),
@@ -61,6 +61,11 @@ class Payment(Base):
         server_default=func.now(),
     )
     processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    processing_started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
