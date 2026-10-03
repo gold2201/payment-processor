@@ -9,7 +9,7 @@ from app.common.enums import Currency, PaymentStatus
 from app.models.payment import Payment
 from app.repositories.base import BaseRepository
 
-CLAIM_TTL_SECONDS = 60
+CLAIM_TTL_SECONDS = 10
 
 
 class PaymentRepository(BaseRepository):
