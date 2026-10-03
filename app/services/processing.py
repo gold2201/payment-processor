@@ -44,8 +44,19 @@ class PaymentProcessingService:
                         state=ProcessingState.NOT_FOUND,
                     )
 
+                if current.processed_at is None:
+                    logger.warning(
+                        "Payment is claimed but not finalized yet: id=%s started_at=%s",
+                        payment_id,
+                        current.processing_started_at,
+                    )
+                    return PaymentProcessingResult(
+                        payment_id=payment_id,
+                        state=ProcessingState.IN_PROGRESS,
+                    )
+
                 logger.info(
-                    "Payment already processed or in-flight: id=%s processed_at=%s",
+                    "Payment already processed: id=%s processed_at=%s",
                     payment_id,
                     current.processed_at,
                 )
