@@ -7,7 +7,7 @@ from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.common.enums import OutboxStatus
+from app.common.enums import OutboxStatus, enum_values
 from app.models.base import Base
 
 
@@ -26,11 +26,11 @@ class Outbox(Base):
             OutboxStatus,
             name="outbox_status",
             native_enum=True,
-            values_callable=lambda x: [e.value for e in x],
+            values_callable=enum_values,
         ),
         nullable=False,
         default=OutboxStatus.PENDING,
-        server_default=OutboxStatus.PENDING,
+        server_default="pending",
     )
     retry_count: Mapped[int] = mapped_column(
         Integer,
@@ -43,6 +43,11 @@ class Outbox(Base):
         nullable=True,
     )
     published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    processing_started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )

@@ -18,10 +18,19 @@ class OutboxService:
         self._uow = UnitOfWork(session)
 
     async def dispatch_pending(self, limit: int = 100) -> OutboxDispatchResult:
+        async with self._uow:
+            reclaimed = await self._uow.outbox.reclaim_stuck()
+            if reclaimed > 0:
+                logger.warning("Outbox: reclaimed %s stuck events", reclaimed)
+
+            events = await self._uow.outbox.claim_pending_batch(limit=limit)
+            await self._uow.commit()
+
+        if not events:
+            return OutboxDispatchResult(selected=0, sent=0, failed=0)
+
         sent = 0
         failed = 0
-
-        events = await self._uow.outbox.get_ready_for_dispatch(limit=limit)
 
         for event in events:
             try:
@@ -36,26 +45,35 @@ class OutboxService:
                     failed += 1
                 continue
 
-            await self._uow.outbox.mark_published(event)
-            sent += 1
-
-        if events:
-            await self._uow.commit()
+            try:
+                async with self._uow:
+                    await self._uow.outbox.mark_published_by_id(event.id)
+                    await self._uow.commit()
+                sent += 1
+            except Exception:
+                logger.exception("Outbox: mark_published failed for event %s", event.id)
 
         return OutboxDispatchResult(selected=len(events), sent=sent, failed=failed)
 
     async def _handle_publish_failure(self, event: Outbox, exc: Exception) -> bool:
         attempts = event.retry_count + 1
 
-        if not attempts_exhausted(attempts=attempts):
-            await self._uow.outbox.schedule_retry(
-                event,
-                attempts=attempts,
-                next_retry_at=backoff_delay(attempts=attempts),
-            )
-            return False
+        try:
+            async with self._uow:
+                if not attempts_exhausted(attempts=attempts):
+                    await self._uow.outbox.schedule_retry_by_id(
+                        event.id,
+                        attempts=attempts,
+                        next_retry_at=backoff_delay(attempts=attempts),
+                    )
+                    await self._uow.commit()
+                    return False
 
-        await self._uow.outbox.mark_failed(event, attempts=attempts)
+                await self._uow.outbox.mark_failed_by_id(event.id, attempts=attempts)
+                await self._uow.commit()
+        except Exception:
+            logger.exception("Outbox: failed to persist failure state for event %s", event.id)
+
         try:
             async with asyncio.timeout(settings.OUTBOX_PUBLISH_TIMEOUT_SECONDS):
                 await publish_payment_to_dlq(
