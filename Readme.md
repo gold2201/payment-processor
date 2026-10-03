@@ -20,19 +20,6 @@
 
 Отказ шлюза (10%) это штатный результат: платёж получает статус `failed`, webhook отправляется как обычно. Повторы и DLQ относятся только к техническим сбоям (БД, брокер, недоступный webhook).
 
-### Топология RabbitMQ
-
-```
-payments (direct) --payments.new--> payments.new --(nack)--> payments.dlx --> payments.new.dlq
-
-payments.dlx --payments.new.retry.1--> payments.new.retry.1 (TTL 5 с)  --+
-payments.dlx --payments.new.retry.2--> payments.new.retry.2 (TTL 10 с) --+--> payments --> payments.new
-```
-
-- `payments.new`: основная очередь. Любое отклонённое сообщение (`nack` без requeue) попадает в DLQ через `payments.dlx`.
-- `payments.new.retry.N`: очереди задержки. У них нет consumer'ов, сообщение лежит до истечения TTL и возвращается в `payments.new`.
-- `payments.new.dlq`: сообщения, не обработанные за 3 попытки.
-
 ### Гарантии доставки
 
 **Outbox.** Событие пишется в БД вместе с платежом, поэтому оно не потеряется, даже если брокер недоступен. Dispatcher выбирает события через `SELECT ... FOR UPDATE SKIP LOCKED`. Если публикация не удалась, событие откладывается с экспоненциальной задержкой и джиттером. После этого оно получает статус `failed` и отправляется в DLQ. Доставка по принципу *at-least-once*.

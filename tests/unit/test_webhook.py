@@ -85,7 +85,7 @@ async def test_goes_to_dlq_after_all_attempts_failed(sender, httpx_mock, sleep, 
 
     assert status == DeliveryStatus.DLQ_PUBLISHED
     assert len(httpx_mock.get_requests()) == 3
-    assert sleep.await_count == 2  # между 3 попытками две паузы
+    assert sleep.await_count == 2
     dlq.assert_awaited_once()
     message = dlq.await_args.args[0]
     assert message["payment_id"] == str(payment_id)
